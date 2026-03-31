@@ -39,7 +39,10 @@ function buildMockTx({
   };
 }
 
-function buildCredential(signature = 'solana-signature', amount = '0.01') {
+// Valid base58 mock signature (88 chars)
+const MOCK_SIG = '5VERv8NMvzbJMEkV8xnrLkEaWRtSz9CosKDYjCJjBRnbJLgp8uirBgmQpjKhoR4tjF3ZpRzrFmBV6UjKdiSZkQUW';
+
+function buildCredential(signature = MOCK_SIG, amount = '0.01') {
   return {
     payload: { signature },
     challenge: {
@@ -83,7 +86,7 @@ describe('server verify', () => {
       credential: buildCredential(),
     });
 
-    expect(result.reference).toBe('solana-signature');
+    expect(result.reference).toBe(MOCK_SIG);
     expect(result.status).toBe('success');
   });
 
@@ -142,10 +145,25 @@ describe('server verify', () => {
 
     await expect(
       (serverMethod as any).verify({ credential: buildCredential() }),
-    ).rejects.toThrow('Could not find the referenced transaction');
+    ).rejects.toThrow('Transaction not found');
   });
 
-  it('rejects when payment reference was already consumed', async () => {
+  it('rejects when payment reference was already consumed (atomic)', async () => {
+    mockGetParsedTransaction.mockResolvedValue(buildMockTx());
+
+    const { solana } = await import('./server.js');
+    const serverMethod = solana({
+      currency: USDC_MINT,
+      recipient: RECIPIENT,
+      tryConsumeReference: vi.fn().mockResolvedValue(false), // already used
+    });
+
+    await expect(
+      (serverMethod as any).verify({ credential: buildCredential() }),
+    ).rejects.toThrow('Payment reference already used');
+  });
+
+  it('rejects when payment reference was already consumed (legacy)', async () => {
     mockGetParsedTransaction.mockResolvedValue(buildMockTx());
 
     const { solana } = await import('./server.js');
@@ -173,6 +191,6 @@ describe('server verify', () => {
 
     await (serverMethod as any).verify({ credential: buildCredential() });
 
-    expect(markReferenceConsumed).toHaveBeenCalledWith('solana-signature');
+    expect(markReferenceConsumed).toHaveBeenCalledWith(MOCK_SIG);
   });
 });
