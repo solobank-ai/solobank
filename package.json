@@ -54,13 +54,14 @@
     "prepare": "tsup"
   },
   "dependencies": {
-    "@solana/kit": "^6.5.0",
     "@solana-program/token": "^0.13.0",
+    "@solana/kit": "^6.5.0",
     "mppx": "^0.4.9",
     "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/node": "^20",
+    "bs58": "^6.0.0",
     "eslint": "^9",
     "tsup": "^8",
     "typescript": "^5",
