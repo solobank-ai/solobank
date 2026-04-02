@@ -1,6 +1,6 @@
 {
   "name": "@solobank/mpp-solana",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Solana USDC payment method for the Machine Payments Protocol (MPP)",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -50,7 +50,8 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "prepare": "tsup"
   },
   "dependencies": {
     "@solana/kit": "^6.5.0",
