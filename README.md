@@ -1,14 +1,16 @@
 # @solobank/mpp-solana
 
-Solana USDC payment method for the [Machine Payments Protocol (MPP)](https://mpp.dev), built around Solana RPC plus SPL Token transfers.
+Solana USDC payment method for the [Machine Payments Protocol (MPP)](https://mpp.dev), built on `@solana/kit` v2 with SPL Token transfers.
+
+[![CI](https://github.com/decentrathon/mpp-solana/actions/workflows/ci.yml/badge.svg)](https://github.com/decentrathon/mpp-solana/actions/workflows/ci.yml)
 
 ## Installation
 
 ```bash
-pnpm add @solobank/mpp-solana mppx @solana/web3.js
+pnpm add @solobank/mpp-solana mppx @solana/kit
 ```
 
-## Accept Payments
+## Accept Payments (Server)
 
 ```ts
 import { Mppx } from 'mppx';
@@ -24,56 +26,73 @@ const mppx = Mppx.create({
 });
 ```
 
-The server verifies the submitted Solana signature directly against RPC token balance deltas.
+The server verifies submitted Solana signatures against RPC using instruction-level checks and token balance deltas.
 
-## Make Payments
+## Make Payments (Client)
 
 ```ts
-import { Connection, Keypair } from '@solana/web3.js';
+import { createKeyPairSignerFromBytes } from '@solana/kit';
 import { Mppx } from 'mppx/client';
 import { solanaClient } from '@solobank/mpp-solana';
 
-const connection = new Connection('https://api.devnet.solana.com', 'confirmed');
-const signer = Keypair.generate();
+const signer = await createKeyPairSignerFromBytes(secretKeyBytes);
 
 const mppx = Mppx.create({
   methods: [
     solanaClient({
-      connection,
-      signer: {
-        publicKey: signer.publicKey,
-        signTransaction: async (tx) => {
-          tx.sign(signer);
-          return tx;
-        },
-      },
+      rpcUrl: 'https://api.mainnet-beta.solana.com',
+      signer,
     }),
   ],
 });
 ```
 
 The client:
-- loads all SPL token accounts for the requested mint
-- builds one or more `transferChecked` instructions
-- creates the recipient ATA if needed
-- signs and broadcasts the transaction
-- returns the Solana signature as the MPP credential
+
+- Loads all SPL token accounts for the requested mint
+- Builds one or more `transferChecked` instructions via `@solana-program/token`
+- Creates the recipient ATA idempotently if needed
+- Signs, validates size, and broadcasts the transaction
+- Returns the Solana signature as the MPP credential
 
 ## Exports
 
 ```ts
+// Client
+import { solanaClient } from '@solobank/mpp-solana';
+// or
+import { solanaClient } from '@solobank/mpp-solana/client';
+
+// Server
+import { solanaServer } from '@solobank/mpp-solana/server';
+
+// Utilities
 import {
-  solanaClient,
-  solanaServer,
   SOLANA_USDC_MINT,
   USDC_DECIMALS,
   parseAmountToRaw,
+  fetchTokenAccounts,
+  buildTransferPlan,
 } from '@solobank/mpp-solana';
 ```
 
-## Testing
+## Development
 
 ```bash
-pnpm --filter @solobank/mpp-solana test
-pnpm --filter @solobank/mpp-solana typecheck
+pnpm install
+pnpm typecheck    # Type checking
+pnpm test         # 22 unit tests
+pnpm build        # Build ESM + CJS + types
 ```
+
+## Tech Stack
+
+- `@solana/kit` v2 — RPC, transaction building, signing
+- `@solana-program/token` — SPL token instructions (transferChecked, ATA)
+- `mppx` — MPP protocol framework
+- `vitest` — Testing
+- `tsup` — Build (ESM + CJS)
+
+## License
+
+MIT
