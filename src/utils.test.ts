@@ -1,11 +1,21 @@
 import { describe, it, expect, vi } from 'vitest';
-import { Keypair, PublicKey } from '@solana/web3.js';
+import { address, type Address } from '@solana/kit';
 import {
   buildTransferPlan,
   fetchTokenAccounts,
   parseAmountToRaw,
   sumReceivedTokenAmount,
 } from './utils.js';
+
+function randomAddress(): Address {
+  // Generate a plausible base58 address for testing
+  const chars = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+  let result = '';
+  for (let i = 0; i < 44; i++) {
+    result += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return result as Address;
+}
 
 describe('parseAmountToRaw', () => {
   it('converts whole number', () => {
@@ -30,85 +40,89 @@ describe('parseAmountToRaw', () => {
 });
 
 describe('fetchTokenAccounts', () => {
-  const owner = new PublicKey('4Nd1mYq2J4pKQnX2NDSSSXWMQZnQXtNCmieYwgdENeoY');
-  const mint = new PublicKey('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v');
-  const accountA = Keypair.generate().publicKey;
-  const accountB = Keypair.generate().publicKey;
+  const owner = address('4Nd1mYq2J4pKQnX2NDSSSXWMQZnQXtNCmieYwgdENeoY');
+  const mint = address('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v');
+  const accountA = randomAddress();
+  const accountB = randomAddress();
 
   it('returns token accounts with parsed balances', async () => {
-    const mockClient = {
-      getParsedTokenAccountsByOwner: vi.fn().mockResolvedValue({
-        value: [
-          {
-            pubkey: accountA,
-            account: {
-              data: {
-                parsed: {
-                  info: {
-                    tokenAmount: { amount: '500000' },
+    const mockRpc = {
+      getTokenAccountsByOwner: vi.fn().mockReturnValue({
+        send: vi.fn().mockResolvedValue({
+          value: [
+            {
+              pubkey: accountA,
+              account: {
+                data: {
+                  parsed: {
+                    info: {
+                      tokenAmount: { amount: '500000' },
+                    },
                   },
                 },
               },
             },
-          },
-          {
-            pubkey: accountB,
-            account: {
-              data: {
-                parsed: {
-                  info: {
-                    tokenAmount: { amount: '300000' },
+            {
+              pubkey: accountB,
+              account: {
+                data: {
+                  parsed: {
+                    info: {
+                      tokenAmount: { amount: '300000' },
+                    },
                   },
                 },
               },
             },
-          },
-        ],
+          ],
+        }),
       }),
     };
 
-    const result = await fetchTokenAccounts(mockClient as any, owner, mint);
+    const result = await fetchTokenAccounts(mockRpc, owner, mint);
     expect(result).toEqual([
       { address: accountA, amount: 500000n },
       { address: accountB, amount: 300000n },
     ]);
-    expect(mockClient.getParsedTokenAccountsByOwner).toHaveBeenCalledTimes(1);
+    expect(mockRpc.getTokenAccountsByOwner).toHaveBeenCalledTimes(1);
   });
 
   it('filters out zero-balance and unparsable accounts', async () => {
-    const mockClient = {
-      getParsedTokenAccountsByOwner: vi.fn().mockResolvedValue({
-        value: [
-          {
-            pubkey: accountA,
-            account: {
-              data: {
-                parsed: {
-                  info: {
-                    tokenAmount: { amount: '0' },
+    const mockRpc = {
+      getTokenAccountsByOwner: vi.fn().mockReturnValue({
+        send: vi.fn().mockResolvedValue({
+          value: [
+            {
+              pubkey: accountA,
+              account: {
+                data: {
+                  parsed: {
+                    info: {
+                      tokenAmount: { amount: '0' },
+                    },
                   },
                 },
               },
             },
-          },
-          {
-            pubkey: accountB,
-            account: {
-              data: Buffer.alloc(0),
+            {
+              pubkey: accountB,
+              account: {
+                data: Buffer.alloc(0),
+              },
             },
-          },
-        ],
+          ],
+        }),
       }),
     };
 
-    const result = await fetchTokenAccounts(mockClient as any, owner, mint);
+    const result = await fetchTokenAccounts(mockRpc, owner, mint);
     expect(result).toEqual([]);
   });
 });
 
 describe('buildTransferPlan', () => {
-  const accountA = Keypair.generate().publicKey;
-  const accountB = Keypair.generate().publicKey;
+  const accountA = randomAddress();
+  const accountB = randomAddress();
 
   it('splits the request across multiple token accounts', () => {
     const plan = buildTransferPlan(
@@ -140,22 +154,22 @@ describe('sumReceivedTokenAmount', () => {
           accountIndex: 0,
           mint: 'mint-a',
           owner: 'recipient',
-          uiTokenAmount: { amount: '100' },
-        } as any,
+          uiTokenAmount: { amount: '100', decimals: 6 },
+        },
       ],
       [
         {
           accountIndex: 0,
           mint: 'mint-a',
           owner: 'recipient',
-          uiTokenAmount: { amount: '600' },
-        } as any,
+          uiTokenAmount: { amount: '600', decimals: 6 },
+        },
         {
           accountIndex: 1,
           mint: 'mint-a',
           owner: 'someone-else',
-          uiTokenAmount: { amount: '999' },
-        } as any,
+          uiTokenAmount: { amount: '999', decimals: 6 },
+        },
       ],
       'mint-a',
       'recipient',

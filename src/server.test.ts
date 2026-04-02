@@ -24,7 +24,7 @@ function buildMockTx({
           accountIndex: 0,
           mint,
           owner: recipient,
-          uiTokenAmount: { amount: before },
+          uiTokenAmount: { amount: before, decimals: 6 },
         },
       ],
       postTokenBalances: [
@@ -32,7 +32,7 @@ function buildMockTx({
           accountIndex: 0,
           mint,
           owner: recipient,
-          uiTokenAmount: { amount: after },
+          uiTokenAmount: { amount: after, decimals: 6 },
         },
       ],
     },
@@ -55,16 +55,17 @@ function buildCredential(signature = MOCK_SIG, amount = '0.01') {
   };
 }
 
-const mockGetParsedTransaction = vi.fn();
+const mockGetTransaction = vi.fn();
 
-vi.mock('@solana/web3.js', async () => {
-  const actual = await vi.importActual<typeof import('@solana/web3.js')>('@solana/web3.js');
+vi.mock('@solana/kit', async () => {
+  const actual = await vi.importActual<typeof import('@solana/kit')>('@solana/kit');
   return {
     ...actual,
-    Connection: vi.fn().mockImplementation(() => ({
-      getParsedTransaction: mockGetParsedTransaction,
+    createSolanaRpc: vi.fn(() => ({
+      getTransaction: vi.fn(() => ({
+        send: mockGetTransaction,
+      })),
     })),
-    clusterApiUrl: vi.fn(() => 'https://api.mainnet-beta.solana.com'),
   };
 });
 
@@ -74,7 +75,7 @@ describe('server verify', () => {
   });
 
   it('accepts valid payment with correct amount', async () => {
-    mockGetParsedTransaction.mockResolvedValue(buildMockTx());
+    mockGetTransaction.mockResolvedValue(buildMockTx());
 
     const { solana } = await import('./server.js');
     const serverMethod = solana({
@@ -91,7 +92,7 @@ describe('server verify', () => {
   });
 
   it('rejects failed transaction', async () => {
-    mockGetParsedTransaction.mockResolvedValue(buildMockTx({ err: { InstructionError: [0, 'Custom'] } }));
+    mockGetTransaction.mockResolvedValue(buildMockTx({ err: { InstructionError: [0, 'Custom'] } }));
 
     const { solana } = await import('./server.js');
     const serverMethod = solana({
@@ -105,7 +106,7 @@ describe('server verify', () => {
   });
 
   it('rejects when payment not sent to the configured recipient', async () => {
-    mockGetParsedTransaction.mockResolvedValue(
+    mockGetTransaction.mockResolvedValue(
       buildMockTx({ recipient: '9xQeWvG816bUx9EPfEZsM5qadwG4m1K4vK6TfGsDz3jS' }),
     );
 
@@ -121,7 +122,7 @@ describe('server verify', () => {
   });
 
   it('rejects when amount is less than requested', async () => {
-    mockGetParsedTransaction.mockResolvedValue(buildMockTx({ after: '5000' }));
+    mockGetTransaction.mockResolvedValue(buildMockTx({ after: '5000' }));
 
     const { solana } = await import('./server.js');
     const serverMethod = solana({
@@ -135,7 +136,7 @@ describe('server verify', () => {
   });
 
   it('rejects when transaction cannot be found', async () => {
-    mockGetParsedTransaction.mockResolvedValue(null);
+    mockGetTransaction.mockResolvedValue(null);
 
     const { solana } = await import('./server.js');
     const serverMethod = solana({
@@ -149,7 +150,7 @@ describe('server verify', () => {
   });
 
   it('rejects when payment reference was already consumed (atomic)', async () => {
-    mockGetParsedTransaction.mockResolvedValue(buildMockTx());
+    mockGetTransaction.mockResolvedValue(buildMockTx());
 
     const { solana } = await import('./server.js');
     const serverMethod = solana({
@@ -164,7 +165,7 @@ describe('server verify', () => {
   });
 
   it('rejects when payment reference was already consumed (legacy)', async () => {
-    mockGetParsedTransaction.mockResolvedValue(buildMockTx());
+    mockGetTransaction.mockResolvedValue(buildMockTx());
 
     const { solana } = await import('./server.js');
     const serverMethod = solana({
@@ -179,7 +180,7 @@ describe('server verify', () => {
   });
 
   it('marks the reference as consumed after successful verification', async () => {
-    mockGetParsedTransaction.mockResolvedValue(buildMockTx());
+    mockGetTransaction.mockResolvedValue(buildMockTx());
     const markReferenceConsumed = vi.fn().mockResolvedValue(undefined);
 
     const { solana } = await import('./server.js');

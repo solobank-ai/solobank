@@ -1,22 +1,26 @@
 import { Method, Receipt } from 'mppx';
-import { Connection, PublicKey, clusterApiUrl, type Cluster, type Finality } from '@solana/web3.js';
+import { createSolanaRpc, address, signature as toSignature } from '@solana/kit';
 import { solanaCharge } from './method.js';
 import {
   SOLANA_USDC_MINT,
   USDC_DECIMALS,
   parseAmountToRaw,
   sumReceivedTokenAmount,
+  type TokenBalance,
 } from './utils.js';
 
 export { solanaCharge } from './method.js';
 export { SOLANA_USDC_MINT, USDC_DECIMALS } from './utils.js';
 
+export type SolanaNetwork = 'mainnet-beta' | 'devnet' | 'testnet';
+export type SolanaCommitment = 'confirmed' | 'finalized';
+
 export interface SolanaServerOptions {
   currency?: string;
   recipient: string;
   rpcUrl?: string;
-  network?: Cluster;
-  commitment?: Finality;
+  network?: SolanaNetwork;
+  commitment?: SolanaCommitment;
   /** Atomic check-and-mark: return true if reference is NEW (first use). Must be atomic (e.g. Redis SETNX). */
   tryConsumeReference?: (reference: string) => Promise<boolean>;
   /** @deprecated Use tryConsumeReference for atomic replay protection */
@@ -25,14 +29,19 @@ export interface SolanaServerOptions {
   markReferenceConsumed?: (reference: string) => Promise<void>;
 }
 
+function clusterRpcUrl(network: SolanaNetwork): string {
+  switch (network) {
+    case 'mainnet-beta': return 'https://api.mainnet-beta.solana.com';
+    case 'devnet': return 'https://api.devnet.solana.com';
+    case 'testnet': return 'https://api.testnet.solana.com';
+  }
+}
+
 export function solana(options: SolanaServerOptions) {
   const network = options.network ?? 'mainnet-beta';
   const commitment = options.commitment ?? 'finalized';
-  const connection = new Connection(
-    options.rpcUrl ?? clusterApiUrl(network),
-    commitment,
-  );
-  const recipient = new PublicKey(options.recipient).toBase58();
+  const rpc = createSolanaRpc(options.rpcUrl ?? clusterRpcUrl(network));
+  const recipient = address(options.recipient);
   const currency = options.currency ?? SOLANA_USDC_MINT;
 
   if (!options.tryConsumeReference && !options.isReferenceConsumed) {
@@ -46,20 +55,27 @@ export function solana(options: SolanaServerOptions) {
     },
 
     async verify({ credential }) {
-      const signature = credential.payload.signature;
+      const sig = credential.payload.signature;
 
       // Validate signature format
-      if (!/^[1-9A-HJ-NP-Za-km-z]{64,88}$/.test(signature)) {
+      if (!/^[1-9A-HJ-NP-Za-km-z]{64,88}$/.test(sig)) {
         throw new Error('Invalid signature format');
       }
 
       // 1. Verify on-chain FIRST (before consuming reference)
-      let tx: Awaited<ReturnType<typeof connection.getParsedTransaction>> | null = null;
+      let tx: any = null;
       for (let attempt = 0; attempt < 5; attempt += 1) {
-        tx = await connection.getParsedTransaction(signature, {
-          commitment,
-          maxSupportedTransactionVersion: 0,
-        });
+        try {
+          tx = await rpc
+            .getTransaction(toSignature(sig), {
+              commitment,
+              encoding: 'jsonParsed',
+              maxSupportedTransactionVersion: 0,
+            })
+            .send();
+        } catch {
+          // RPC error, retry
+        }
 
         if (tx) break;
 
@@ -79,8 +95,8 @@ export function solana(options: SolanaServerOptions) {
       }
 
       const transferredRaw = sumReceivedTokenAmount(
-        tx.meta.preTokenBalances,
-        tx.meta.postTokenBalances,
+        tx.meta.preTokenBalances as TokenBalance[],
+        tx.meta.postTokenBalances as TokenBalance[],
         currency,
         recipient,
       );
@@ -101,21 +117,21 @@ export function solana(options: SolanaServerOptions) {
 
       // 2. Replay protection AFTER successful verification
       if (options.tryConsumeReference) {
-        const isNew = await options.tryConsumeReference(signature);
+        const isNew = await options.tryConsumeReference(sig);
         if (!isNew) {
           throw new Error('Payment reference already used');
         }
       } else {
         // Legacy: separate check + mark (not atomic, kept for backwards compat)
-        if (await options.isReferenceConsumed?.(signature)) {
+        if (await options.isReferenceConsumed?.(sig)) {
           throw new Error('Payment reference already used');
         }
-        await options.markReferenceConsumed?.(signature);
+        await options.markReferenceConsumed?.(sig);
       }
 
       return Receipt.from({
         method: 'solana',
-        reference: signature,
+        reference: sig,
         status: 'success',
         timestamp: new Date().toISOString(),
       });

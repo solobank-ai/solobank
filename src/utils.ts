@@ -1,19 +1,39 @@
-import type { Connection, ParsedAccountData, PublicKey, TokenBalance } from '@solana/web3.js';
+import { address, type Address } from '@solana/kit';
 
-export const SOLANA_USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+export const SOLANA_USDC_MINT = address('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v');
 export const USDC_DECIMALS = 6;
 
 export interface TokenAccountInfo {
-  address: PublicKey;
+  address: Address;
   amount: bigint;
 }
 
+export interface TokenBalance {
+  accountIndex: number;
+  mint: string;
+  owner?: string;
+  uiTokenAmount: { amount: string; decimals: number };
+}
+
+/** Minimal RPC interface for token account queries (testable / mockable). */
+export interface TokenAccountRpc {
+  getTokenAccountsByOwner(
+    owner: Address,
+    filter: { mint: Address },
+    config: { encoding: 'jsonParsed' },
+  ): { send(): Promise<{ value: ReadonlyArray<{ pubkey: Address; account: { data: unknown } }> }> };
+}
+
 export async function fetchTokenAccounts(
-  connection: Pick<Connection, 'getParsedTokenAccountsByOwner'>,
-  owner: PublicKey,
-  mint: PublicKey,
+  rpc: TokenAccountRpc,
+  owner: Address,
+  mint: Address,
 ): Promise<TokenAccountInfo[]> {
-  const response = await connection.getParsedTokenAccountsByOwner(owner, { mint });
+  const response = await rpc.getTokenAccountsByOwner(
+    owner,
+    { mint },
+    { encoding: 'jsonParsed' },
+  ).send();
 
   return response.value
     .map(({ pubkey, account }) => {
@@ -22,7 +42,7 @@ export async function fetchTokenAccounts(
         return null;
       }
 
-      const parsed = data as ParsedAccountData;
+      const parsed = data as { parsed: { info?: { tokenAmount?: { amount?: string } } } };
       const amount = parsed.parsed.info?.tokenAmount?.amount;
       if (typeof amount !== 'string') {
         return null;
@@ -40,9 +60,9 @@ export async function fetchTokenAccounts(
 export function buildTransferPlan(
   accounts: TokenAccountInfo[],
   requestedRaw: bigint,
-): Array<{ address: PublicKey; amount: bigint }> {
+): Array<{ address: Address; amount: bigint }> {
   let remaining = requestedRaw;
-  const plan: Array<{ address: PublicKey; amount: bigint }> = [];
+  const plan: Array<{ address: Address; amount: bigint }> = [];
 
   for (const account of accounts) {
     if (remaining <= 0n) {
