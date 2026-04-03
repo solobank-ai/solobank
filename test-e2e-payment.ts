@@ -43,60 +43,21 @@ const REQUEST_BODY = JSON.stringify({
 
 // ── Helpers ──
 
-/** Decode base64url string */
-function decodeBase64Url(b64url: string): string {
-  const base64 = b64url.replace(/-/g, '+').replace(/_/g, '/');
-  const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
-  return Buffer.from(padded, 'base64').toString('utf-8');
-}
-
-/** Encode to base64url (no padding) */
-function encodeBase64Url(str: string): string {
-  return Buffer.from(str).toString('base64url');
-}
-
-/** Parse full challenge from WWW-Authenticate header */
-function parseChallengeFromHeader(res: Response): {
+/** Parse challenge from 402 JSON body */
+function parseChallengeFromBody(body: any): {
   amount: string;
   currency: string;
   recipient: string;
-  fullChallenge: Record<string, string>;
 } {
-  const wwwAuth = res.headers.get('www-authenticate') ?? '';
-  // Parse all key="value" pairs from the Payment scheme
-  const params: Record<string, string> = {};
-  const regex = /(\w+)="([^"]+)"/g;
-  let match;
-  while ((match = regex.exec(wwwAuth)) !== null) {
-    params[match[1]] = match[2];
+  const payment = body?.payment;
+  if (!payment?.recipient || !payment?.amount) {
+    throw new Error(`Invalid 402 body: ${JSON.stringify(body).slice(0, 200)}`);
   }
-
-  if (!params.request) {
-    throw new Error(`No request= in WWW-Authenticate header: ${wwwAuth.slice(0, 200)}`);
-  }
-
-  const request = JSON.parse(decodeBase64Url(params.request));
-  return { ...request, fullChallenge: params };
-}
-
-/** Build mppx Authorization header with full credential */
-function buildAuthorizationHeader(
-  challenge: Record<string, string>,
-  signature: string,
-): string {
-  const credential = {
-    challenge: {
-      id: challenge.id,
-      realm: challenge.realm,
-      method: challenge.method,
-      intent: challenge.intent,
-      request: challenge.request, // keep as base64url
-      ...(challenge.expires ? { expires: challenge.expires } : {}),
-    },
-    payload: { signature },
+  return {
+    amount: payment.amount,
+    currency: payment.currency ?? 'SOL',
+    recipient: payment.recipient,
   };
-  const encoded = encodeBase64Url(JSON.stringify(credential));
-  return `Payment ${encoded}`;
 }
 
 function buildTransferData(amountLamports: bigint): Uint8Array {
@@ -185,9 +146,9 @@ async function runPaymentFlow(index: number): Promise<TimingResult> {
     process.exit(1);
   }
 
-  const { amount, currency, recipient, fullChallenge } = parseChallengeFromHeader(res402);
-  console.log(`  ✓ 402 Challenge: ${amount} SOL → ${recipient.slice(0, 8)}... (devnet)`);
-  console.log(`    (currency mint: ${currency.slice(0, 8)}... — verifier accepts SOL on devnet)`);
+  const body402 = await res402.json();
+  const { amount, currency, recipient } = parseChallengeFromBody(body402);
+  console.log(`  ✓ 402 Challenge: ${amount} ${currency} → ${recipient.slice(0, 8)}... (devnet)`);
 
   // Step 2: Build & sign SOL transfer (devnet verifier accepts system transfers)
   const amountLamports = parseAmountToLamports(amount);
@@ -228,13 +189,12 @@ async function runPaymentFlow(index: number): Promise<TimingResult> {
   const onChainMs = t3 - t2;
   console.log(`  ✓ TX confirmed on-chain`);
 
-  // Step 4: Retry with mppx Authorization header → 200
-  const authHeader = buildAuthorizationHeader(fullChallenge, txSig);
+  // Step 4: Retry with x-payment-signature → 200
   const res200 = await fetch(`${GATEWAY}${ENDPOINT}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': authHeader,
+      'x-payment-signature': txSig,
     },
     body: REQUEST_BODY,
   });
@@ -255,7 +215,7 @@ async function runPaymentFlow(index: number): Promise<TimingResult> {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': authHeader,
+      'x-payment-signature': txSig,
     },
     body: REQUEST_BODY,
   });
@@ -313,7 +273,8 @@ const balCheckRes = await fetch(`${GATEWAY}${ENDPOINT}`, {
   headers: { 'Content-Type': 'application/json' },
   body: REQUEST_BODY,
 });
-const { recipient: recipientStr } = parseChallengeFromHeader(balCheckRes);
+const balCheckBody = await balCheckRes.json();
+const { recipient: recipientStr } = parseChallengeFromBody(balCheckBody);
 const recipientAddr = address(recipientStr);
 const recipientBal = await rpc.getBalance(recipientAddr).send();
 console.log(`  Recipient ${recipientStr.slice(0, 8)}... balance: ${Number(recipientBal.value) / 1e9} SOL`);
