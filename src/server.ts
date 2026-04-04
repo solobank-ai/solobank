@@ -23,10 +23,6 @@ export interface SolanaServerOptions {
   commitment?: SolanaCommitment;
   /** Atomic check-and-mark: return true if reference is NEW (first use). Must be atomic (e.g. Redis SETNX). */
   tryConsumeReference?: (reference: string) => Promise<boolean>;
-  /** @deprecated Use tryConsumeReference for atomic replay protection */
-  isReferenceConsumed?: (reference: string) => Promise<boolean>;
-  /** @deprecated Use tryConsumeReference for atomic replay protection */
-  markReferenceConsumed?: (reference: string) => Promise<void>;
 }
 
 function clusterRpcUrl(network: SolanaNetwork): string {
@@ -44,7 +40,7 @@ export function solana(options: SolanaServerOptions) {
   const recipient = address(options.recipient);
   const currency = options.currency ?? SOLANA_USDC_MINT;
 
-  if (!options.tryConsumeReference && !options.isReferenceConsumed) {
+  if (!options.tryConsumeReference) {
     console.warn('[mpp-solana] WARNING: No replay protection configured. Signatures can be reused!');
   }
 
@@ -121,12 +117,6 @@ export function solana(options: SolanaServerOptions) {
         if (!isNew) {
           throw new Error('Payment reference already used');
         }
-      } else {
-        // Legacy: separate check + mark (not atomic, kept for backwards compat)
-        if (await options.isReferenceConsumed?.(sig)) {
-          throw new Error('Payment reference already used');
-        }
-        await options.markReferenceConsumed?.(sig);
       }
 
       return Receipt.from({

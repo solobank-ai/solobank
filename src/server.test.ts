@@ -171,7 +171,7 @@ describe('server verify', () => {
     const serverMethod = solana({
       currency: USDC_MINT,
       recipient: RECIPIENT,
-      isReferenceConsumed: vi.fn().mockResolvedValue(true),
+      tryConsumeReference: vi.fn().mockResolvedValue(false),
     });
 
     await expect(
@@ -179,19 +179,19 @@ describe('server verify', () => {
     ).rejects.toThrow('Payment reference already used');
   });
 
-  it('marks the reference as consumed after successful verification', async () => {
+  it('calls tryConsumeReference after successful verification', async () => {
     mockGetTransaction.mockResolvedValue(buildMockTx());
-    const markReferenceConsumed = vi.fn().mockResolvedValue(undefined);
+    const tryConsume = vi.fn().mockResolvedValue(true);
 
     const { solana } = await import('./server.js');
     const serverMethod = solana({
       currency: USDC_MINT,
       recipient: RECIPIENT,
-      markReferenceConsumed,
+      tryConsumeReference: tryConsume,
     });
 
     await (serverMethod as any).verify({ credential: buildCredential() });
 
-    expect(markReferenceConsumed).toHaveBeenCalledWith(MOCK_SIG);
+    expect(tryConsume).toHaveBeenCalledWith(MOCK_SIG);
   });
 });

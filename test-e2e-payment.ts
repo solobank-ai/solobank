@@ -31,7 +31,7 @@ import bs58 from 'bs58';
 
 // ── Config ──
 
-const DEVNET_RPC = 'https://api.devnet.solana.com';
+const DEVNET_RPC = process.env.DEVNET_RPC ?? 'https://devnet.helius-rpc.com/?api-key=934fab8c-0c84-47fc-aff6-8e6afafab1bd';
 const GATEWAY = 'http://130.61.175.254:3001';
 const PRIVATE_KEY = '3736GM8u93ya4NDWjMzmeJk3QXvhHHnbJkfnTLPQJU1zRppK7Hu1TT1r8PpSrqLnA47vP1YLSAZG3uv9NF4mYBCM';
 const SYSTEM_PROGRAM = address('11111111111111111111111111111111');
@@ -82,7 +82,7 @@ function fmt(ms: number): string {
 // ── Main ──
 
 const rpc = createSolanaRpc(DEVNET_RPC);
-const rpcSub = createSolanaRpcSubscriptions('wss://api.devnet.solana.com');
+const rpcSub = createSolanaRpcSubscriptions(DEVNET_RPC.replace('https://', 'wss://').replace('http://', 'ws://'));
 const sendAndConfirm = sendAndConfirmTransactionFactory({ rpc, rpcSubscriptions: rpcSub });
 
 console.log('═══════════════════════════════════════════');
@@ -203,8 +203,9 @@ async function runPaymentFlow(index: number): Promise<TimingResult> {
   const verifyMs = t4 - t3;
   const totalMs = t4 - t0;
 
+  const serverVerifyMs = res200.headers.get('x-verify-ms') ?? '?';
   if (res200.status === 200) {
-    console.log(`  ✓ Gateway: 200 OK — payment accepted!`);
+    console.log(`  ✓ Gateway: 200 OK — payment accepted! (server verify: ${serverVerifyMs}ms)`);
   } else {
     const errBody = await res200.text();
     console.error(`  ✗ Expected 200, got ${res200.status}: ${errBody.slice(0, 200)}`);
