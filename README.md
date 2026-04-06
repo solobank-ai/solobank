@@ -1,13 +1,17 @@
 # @solobank/mpp-solana
 
-Solana USDC payment method for the [Machine Payments Protocol (MPP)](https://mpp.dev), built on `@solana/kit` v2 with SPL Token transfers.
+Solana USDC payment method for the [Machine Payments Protocol (MPP)](https://mpp.dev). Client and server implementations built on `@solana/kit` v2 with SPL Token transfers.
 
-[![CI](https://github.com/decentrathon/mpp-solana/actions/workflows/ci.yml/badge.svg)](https://github.com/decentrathon/mpp-solana/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/@solobank/mpp-solana)](https://www.npmjs.com/package/@solobank/mpp-solana)
+[![CI](https://github.com/solobank-ai/mpp-solana/actions/workflows/ci.yml/badge.svg)](https://github.com/solobank-ai/mpp-solana/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-## Installation
+> **Note**: This is the standalone version. The MPP Solana payment method is also bundled into [`@solobank/sdk`](https://github.com/solobank-ai/package).
+
+## Install
 
 ```bash
-pnpm add @solobank/mpp-solana mppx @solana/kit
+npm install @solobank/mpp-solana mppx @solana/kit
 ```
 
 ## Accept Payments (Server)
@@ -21,12 +25,13 @@ const mppx = Mppx.create({
     solanaServer({
       currency: SOLANA_USDC_MINT,
       recipient: 'YOUR_SOLANA_WALLET',
+      rpcUrl: 'https://mainnet.helius-rpc.com/?api-key=YOUR_KEY',
     }),
   ],
 });
 ```
 
-The server verifies submitted Solana signatures against RPC using instruction-level checks and token balance deltas.
+The server verifies Solana signatures via RPC using instruction-level checks and token balance deltas.
 
 ## Make Payments (Client)
 
@@ -40,27 +45,20 @@ const signer = await createKeyPairSignerFromBytes(secretKeyBytes);
 const mppx = Mppx.create({
   methods: [
     solanaClient({
-      rpcUrl: 'https://api.mainnet-beta.solana.com',
+      rpcUrl: 'https://mainnet.helius-rpc.com/?api-key=YOUR_KEY',
       signer,
     }),
   ],
 });
 ```
 
-The client:
-
-- Loads all SPL token accounts for the requested mint
-- Builds one or more `transferChecked` instructions via `@solana-program/token`
-- Creates the recipient ATA idempotently if needed
-- Signs, validates size, and broadcasts the transaction
-- Returns the Solana signature as the MPP credential
+The client loads SPL token accounts, builds `transferChecked` instructions, creates the recipient ATA if needed, signs and broadcasts, then returns the Solana signature as the MPP credential.
 
 ## Exports
 
 ```ts
 // Client
 import { solanaClient } from '@solobank/mpp-solana';
-// or
 import { solanaClient } from '@solobank/mpp-solana/client';
 
 // Server
@@ -80,18 +78,25 @@ import {
 
 ```bash
 pnpm install
-pnpm typecheck    # Type checking
-pnpm test         # 22 unit tests
-pnpm build        # Build ESM + CJS + types
+pnpm build            # Build ESM + CJS + types
+pnpm typecheck        # Type checking
+pnpm test             # 22 unit tests
 ```
 
 ## Tech Stack
 
-- `@solana/kit` v2 — RPC, transaction building, signing
-- `@solana-program/token` — SPL token instructions (transferChecked, ATA)
-- `mppx` — MPP protocol framework
-- `vitest` — Testing
-- `tsup` — Build (ESM + CJS)
+- **Solana**: `@solana/kit` v2 (RPC, transactions, signing)
+- **SPL Token**: `@solana-program/token` (transferChecked, ATA)
+- **MPP**: `mppx` protocol framework
+- **RPC**: Helius
+- **Build**: tsup (ESM + CJS)
+- **Testing**: Vitest
+
+## Related Repos
+
+- [solobank-ai/package](https://github.com/solobank-ai/package) -- SDK + MCP + CLI (includes this library)
+- [solobank-ai/backend](https://github.com/solobank-ai/backend) -- MPP payment gateway
+- [mppx](https://github.com/nichochar/mppx) -- MPP protocol framework
 
 ## License
 
