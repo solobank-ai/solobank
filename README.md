@@ -39,7 +39,7 @@
 
 | Name | Role | Contact |
 |------|------|---------|
-| Igor Stolyarov | Founder & Lead Engineer | [Telegram](https://t.me/Magurin) · [GitHub](https://github.com/Magurin) |
+| Igor Stolyarov | Founder & Lead Engineer | [GitHub](https://github.com/Magurin) |
 | Stanislav | Backend & Contracts | [GitHub](https://github.com/stanislav744) |
 
 > Replace the rows above with the actual team. Add Twitter/X handles, demo
@@ -155,16 +155,6 @@ solobank init
 
 The init wizard creates a wallet, configures safeguards, and auto-installs
 the MCP server into Claude Desktop, Cursor, and Windsurf.
-
-## Demo
-
-<div align="center">
-<a href="https://solobank.lol/docs">
-<img src="https://raw.githubusercontent.com/solobank-ai/.github/main/assets/demo.svg" alt="Solobank CLI Demo" width="800" />
-</a>
-</div>
-
----
 
 ## Talk to your Agent
 
@@ -420,7 +410,6 @@ exist for history but day-to-day work happens here.
 - 📦 npm scope — <https://www.npmjs.com/org/solobank>
 - 🐙 GitHub org — <https://github.com/solobank-ai>
 - 🎬 Demo asciinema (in `solobank-ai/.github/assets/demo.cast`)
-- 💬 Telegram — *(add link)*
 - 🐦 X / Twitter — *(add handle)*
 
 ---
