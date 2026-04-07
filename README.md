@@ -1,0 +1,1 @@
+# solobank monorepo (in progress)
