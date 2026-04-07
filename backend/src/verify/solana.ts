@@ -1,0 +1,321 @@
+import { createSolanaRpc, signature as toSignature } from "@solana/kit";
+import type { VerifyResult } from "../types/index.js";
+import { USDC_MINT, USDC_DECIMALS, SOL_DECIMALS } from "../constants.js";
+
+// ── RPC response types ──
+
+interface ParsedTransactionMeta {
+  err: unknown;
+  preTokenBalances?: TokenBalance[];
+  postTokenBalances?: TokenBalance[];
+  innerInstructions?: { index: number; instructions: ParsedInstruction[] }[];
+}
+
+interface ParsedTransactionResponse {
+  blockTime?: number;
+  meta: ParsedTransactionMeta | null;
+  transaction?: {
+    message?: {
+      instructions?: ParsedInstruction[];
+      accountKeys?: { pubkey: string }[];
+    };
+  };
+}
+
+const MAX_RETRIES = 40;
+const RETRY_INTERVAL_MS = 100;
+const MAX_TX_AGE_SECONDS = 300; // 5 minutes
+
+function parseAmountToRaw(amount: string, decimals: number): bigint {
+  const [whole = "0", fraction = ""] = amount.split(".");
+  const padded = fraction.padEnd(decimals, "0").slice(0, decimals);
+  return BigInt(whole + padded);
+}
+
+// ── Parsed instruction types ──
+
+interface ParsedInstruction {
+  program: string;
+  programId: string;
+  parsed?: {
+    type: string;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC returns dynamic shapes
+    info: Record<string, any>;
+  };
+}
+
+interface TokenBalance {
+  accountIndex: number;
+  mint: string;
+  uiTokenAmount: { amount: string; decimals: number };
+  owner?: string;
+}
+
+// ── Instruction-level verification (mainnet USDC) ──
+
+interface UsdcTransferInfo {
+  sender: string;
+  destination: string;
+  amount: bigint;
+}
+
+function extractUsdcTransfers(
+  instructions: ParsedInstruction[],
+  innerInstructions: { index: number; instructions: ParsedInstruction[] }[],
+  recipient: string,
+  recipientAtas: Set<string>,
+): UsdcTransferInfo[] {
+  const transfers: UsdcTransferInfo[] = [];
+
+  const allInstructions: ParsedInstruction[] = [
+    ...instructions,
+    ...innerInstructions.flatMap((inner) => inner.instructions),
+  ];
+
+  for (const ix of allInstructions) {
+    if (ix.program !== "spl-token" || !ix.parsed) continue;
+
+    const { type, info } = ix.parsed;
+
+    if (type === "transfer" || type === "transferChecked") {
+      const dest: string = info.destination ?? "";
+      if (recipientAtas.has(dest)) {
+        const rawAmount =
+          type === "transferChecked"
+            ? BigInt(info.tokenAmount?.amount ?? "0")
+            : BigInt(info.amount ?? "0");
+        transfers.push({
+          sender: info.source ?? info.authority ?? "unknown",
+          destination: dest,
+          amount: rawAmount,
+        });
+      }
+    }
+  }
+
+  return transfers;
+}
+
+function getRecipientAtas(
+  postTokenBalances: TokenBalance[],
+  recipient: string,
+): Set<string> {
+  const atas = new Set<string>();
+  for (const bal of postTokenBalances) {
+    if (bal.owner === recipient && bal.mint === USDC_MINT) {
+      atas.add(String(bal.accountIndex));
+    }
+  }
+  return atas;
+}
+
+// ── Balance delta verification (fallback & cross-check) ──
+
+function sumReceivedAmount(
+  pre: TokenBalance[],
+  post: TokenBalance[],
+  recipient: string,
+): bigint {
+  let received = 0n;
+  for (const postBal of post) {
+    if (postBal.mint !== USDC_MINT || postBal.owner !== recipient) continue;
+    const preBal = pre.find(
+      (p) => p.accountIndex === postBal.accountIndex && p.mint === USDC_MINT,
+    );
+    const preAmount = BigInt(preBal?.uiTokenAmount.amount ?? "0");
+    const postAmount = BigInt(postBal.uiTokenAmount.amount);
+    const delta = postAmount - preAmount;
+    if (delta > 0n) received += delta;
+  }
+  return received;
+}
+
+// ── Devnet SOL instruction verification ──
+
+interface SolTransferInfo {
+  sender: string;
+  destination: string;
+  lamports: bigint;
+}
+
+function extractSolTransfers(
+  instructions: ParsedInstruction[],
+  recipient: string,
+): SolTransferInfo[] {
+  const transfers: SolTransferInfo[] = [];
+  for (const ix of instructions) {
+    if (ix.program !== "system" || !ix.parsed) continue;
+    if (ix.parsed.type !== "transfer") continue;
+    const { info } = ix.parsed;
+    if (info.destination === recipient) {
+      transfers.push({
+        sender: info.source ?? "unknown",
+        destination: info.destination,
+        lamports: BigInt(info.lamports ?? "0"),
+      });
+    }
+  }
+  return transfers;
+}
+
+// ── Main verifier ──
+
+export type SolanaNetwork = "mainnet-beta" | "devnet";
+
+export function createVerifier(
+  rpcUrl: string,
+  recipientAddress: string,
+  network: SolanaNetwork = "mainnet-beta",
+) {
+  const rpc = createSolanaRpc(rpcUrl);
+  const isDevnet = network === "devnet";
+
+  /**
+   * Poll getTransaction until the RPC returns data.
+   * One call does both: confirms finality AND returns parsed tx.
+   * Equivalent to Sui's getTransactionBlock().
+   */
+  async function fetchTransaction(sig: string): Promise<ParsedTransactionResponse | null> {
+    const txSignature = toSignature(sig);
+
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      try {
+        const tx = await rpc
+          .getTransaction(txSignature, {
+            commitment: "confirmed",
+            encoding: "jsonParsed",
+            maxSupportedTransactionVersion: 0,
+          })
+          .send();
+        if (tx) return tx as unknown as ParsedTransactionResponse;
+      } catch {
+        // RPC error or not yet indexed, retry
+      }
+      await new Promise((r) => setTimeout(r, RETRY_INTERVAL_MS));
+    }
+
+    return null;
+  }
+
+  function checkTxBasics(tx: ParsedTransactionResponse): string | null {
+    if (tx.meta?.err) return "Transaction failed on-chain";
+    if (tx.blockTime) {
+      const age = Math.floor(Date.now() / 1000) - Number(tx.blockTime);
+      if (age > MAX_TX_AGE_SECONDS) return "Transaction too old";
+    }
+    return null;
+  }
+
+  // ── Mainnet: USDC verification ──
+
+  async function verifyMainnet(sig: string, expectedAmountUsd: string): Promise<VerifyResult> {
+    const expectedRaw = parseAmountToRaw(expectedAmountUsd, USDC_DECIMALS);
+    const tx = await fetchTransaction(sig);
+
+    if (!tx) {
+      return { valid: false, error: "Transaction not found after retries", transferredRaw: 0n };
+    }
+
+    const basicError = checkTxBasics(tx);
+    if (basicError) return { valid: false, error: basicError, transferredRaw: 0n };
+
+    const pre: TokenBalance[] = tx.meta?.preTokenBalances ?? [];
+    const post: TokenBalance[] = tx.meta?.postTokenBalances ?? [];
+    const instructions: ParsedInstruction[] =
+      tx.transaction?.message?.instructions ?? [];
+    const innerInstructions: { index: number; instructions: ParsedInstruction[] }[] =
+      tx.meta?.innerInstructions ?? [];
+
+    const balanceDelta = sumReceivedAmount(pre, post, recipientAddress);
+
+    const recipientAtas = getRecipientAtas(post, recipientAddress);
+    const accountKeys: { pubkey: string }[] =
+      tx.transaction?.message?.accountKeys ?? [];
+
+    const ataAddresses = new Set<string>();
+    for (const bal of post) {
+      if (bal.owner === recipientAddress && bal.mint === USDC_MINT) {
+        const addr = accountKeys[bal.accountIndex];
+        if (addr) ataAddresses.add(String(addr.pubkey ?? addr));
+      }
+    }
+
+    const usdcTransfers = extractUsdcTransfers(
+      instructions,
+      innerInstructions,
+      recipientAddress,
+      ataAddresses,
+    );
+
+    const instructionTotal = usdcTransfers.reduce((sum, t) => sum + t.amount, 0n);
+    const senderAddress = usdcTransfers[0]?.sender;
+
+    const transferredRaw = balanceDelta < instructionTotal ? balanceDelta : instructionTotal;
+
+    if (transferredRaw < expectedRaw) {
+      return {
+        valid: false,
+        error: `Insufficient payment: received ${transferredRaw}, expected ${expectedRaw}`,
+        transferredRaw,
+        senderAddress,
+      };
+    }
+
+    if (instructionTotal === 0n && balanceDelta > 0n) {
+      return {
+        valid: false,
+        error: "Balance changed without a valid spl-token transfer instruction",
+        transferredRaw: 0n,
+        senderAddress,
+      };
+    }
+
+    return { valid: true, transferredRaw, senderAddress };
+  }
+
+  // ── Devnet: SOL verification ──
+
+  async function verifyDevnet(sig: string, expectedAmount: string): Promise<VerifyResult> {
+    const expectedLamports = parseAmountToRaw(expectedAmount, SOL_DECIMALS);
+    const tx = await fetchTransaction(sig);
+
+    if (!tx) {
+      return { valid: false, error: "Transaction not found after retries", transferredRaw: 0n };
+    }
+
+    const basicError = checkTxBasics(tx);
+    if (basicError) return { valid: false, error: basicError, transferredRaw: 0n };
+
+    const instructions: ParsedInstruction[] =
+      tx.transaction?.message?.instructions ?? [];
+
+    const solTransfers = extractSolTransfers(instructions, recipientAddress);
+
+    if (solTransfers.length === 0) {
+      return {
+        valid: false,
+        error: "No SOL transfer to recipient found in transaction instructions",
+        transferredRaw: 0n,
+      };
+    }
+
+    const totalLamports = solTransfers.reduce((sum, t) => sum + t.lamports, 0n);
+    const senderAddress = solTransfers[0]?.sender;
+
+    if (totalLamports < expectedLamports) {
+      return {
+        valid: false,
+        error: `Insufficient payment: received ${totalLamports} lamports, expected ${expectedLamports}`,
+        transferredRaw: totalLamports,
+        senderAddress,
+      };
+    }
+
+    return { valid: true, transferredRaw: totalLamports, senderAddress };
+  }
+
+  return {
+    verify: isDevnet ? verifyDevnet : verifyMainnet,
+    network,
+  };
+}
