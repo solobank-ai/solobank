@@ -23,6 +23,8 @@ export interface SolanaServerOptions {
   commitment?: SolanaCommitment;
   /** Atomic check-and-mark: return true if reference is NEW (first use). Must be atomic (e.g. Redis SETNX). */
   tryConsumeReference?: (reference: string) => Promise<boolean>;
+  /** Opt-in escape hatch to allow running without replay protection (NOT for production). */
+  allowReplay?: boolean;
 }
 
 function clusterRpcUrl(network: SolanaNetwork): string {
@@ -40,8 +42,11 @@ export function solana(options: SolanaServerOptions) {
   const recipient = address(options.recipient);
   const currency = options.currency ?? SOLANA_USDC_MINT;
 
-  if (!options.tryConsumeReference) {
-    console.warn('[mpp-solana] WARNING: No replay protection configured. Signatures can be reused!');
+  if (!options.tryConsumeReference && !options.allowReplay) {
+    throw new Error(
+      '[mpp-solana] tryConsumeReference is required. Pass an atomic check-and-mark store ' +
+        '(e.g. Redis SETNX), or explicitly set allowReplay: true for local testing.',
+    );
   }
 
   return Method.toServer(solanaCharge, {

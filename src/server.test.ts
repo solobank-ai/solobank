@@ -81,6 +81,7 @@ describe('server verify', () => {
     const serverMethod = solana({
       currency: USDC_MINT,
       recipient: RECIPIENT,
+      allowReplay: true,
     });
 
     const result = await (serverMethod as any).verify({
@@ -98,6 +99,7 @@ describe('server verify', () => {
     const serverMethod = solana({
       currency: USDC_MINT,
       recipient: RECIPIENT,
+      allowReplay: true,
     });
 
     await expect(
@@ -114,6 +116,7 @@ describe('server verify', () => {
     const serverMethod = solana({
       currency: USDC_MINT,
       recipient: RECIPIENT,
+      allowReplay: true,
     });
 
     await expect(
@@ -128,6 +131,7 @@ describe('server verify', () => {
     const serverMethod = solana({
       currency: USDC_MINT,
       recipient: RECIPIENT,
+      allowReplay: true,
     });
 
     await expect(
@@ -142,6 +146,7 @@ describe('server verify', () => {
     const serverMethod = solana({
       currency: USDC_MINT,
       recipient: RECIPIENT,
+      allowReplay: true,
     });
 
     await expect(

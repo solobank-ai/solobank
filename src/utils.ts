@@ -116,7 +116,12 @@ export function sumReceivedTokenAmount(
   return received;
 }
 
+const AMOUNT_RE = /^(0|[1-9]\d*)(\.\d+)?$/;
+
 export function parseAmountToRaw(amount: string, decimals: number): bigint {
+  if (typeof amount !== 'string' || !AMOUNT_RE.test(amount)) {
+    throw new Error(`Invalid amount: ${amount}`);
+  }
   const [whole = '0', frac = ''] = amount.split('.');
   const paddedFrac = frac.padEnd(decimals, '0').slice(0, decimals);
   return BigInt(whole + paddedFrac);
