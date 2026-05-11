@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx create-next-app@latest . --typescript --tailwind --eslint --app --src-dir --no-import-alias --turbopack)",
+      "Bash(npx create-next-app@latest . --typescript --tailwind --eslint --app --src-dir --no-import-alias --turbopack --no-react-compiler)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(curl -s http://localhost:55554)",
+      "Bash(npx tsc:*)",
+      "Bash(gh api:*)",
+      "Bash(timeout 120 bash -c 'while true; do lines=$\\(wc -l < \"\"C:\\\\Users\\\\Magyr\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--n90-frontend\\\\e9447b49-444d-4b7e-b8fa-86ae7b825ac0\\\\tasks\\\\ad785d6228d2aee6d.output\"\" 2>/dev/null\\); echo \"\"Lines: $lines\"\"; if [ \"\"$lines\"\" -gt 100 ] 2>/dev/null; then break; fi; sleep 10; done')"
+    ]
+  }
+}
