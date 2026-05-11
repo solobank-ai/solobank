@@ -1,0 +1,50 @@
+{
+  "name": "@solobank/cli",
+  "version": "3.1.4",
+  "description": "CLI for AI agent bank accounts on Solana — init, address, balance, send, pay",
+  "type": "module",
+  "bin": {
+    "solobank": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "solana",
+    "wallet",
+    "ai",
+    "agent",
+    "cli",
+    "usdc",
+    "mpp",
+    "solobank"
+  ],
+  "author": "solobank",
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/",
+    "test": "vitest run",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@solobank/sdk": "^3.1.1",
+    "commander": "^13",
+    "picocolors": "^1",
+    "viem": "^2.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "eslint": "^9",
+    "tsup": "^8",
+    "typescript": "^5",
+    "vitest": "^3"
+  },
+  "license": "MIT"
+}
